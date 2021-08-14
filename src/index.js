@@ -9,6 +9,15 @@ const JSX = (
   </div>
 )
 // render(JSX, root)
+// setTimeout(() => {
+//   const jsx = (
+//     <div>
+//       {/* <p>change React Fiber</p> */}
+//       <p>Hi Fiber</p>
+//     </div>
+//   )
+//   render(jsx, root)
+// }, 2000)
 
 class Greating extends Component {
   constructor(props) {
@@ -16,9 +25,7 @@ class Greating extends Component {
   }
   render() {
     return (
-      <div>
-        { this.props.title } Fiber React
-      </div>
+      <div>{ this.props.title } Fiber React </div>
     )
   }
 }
