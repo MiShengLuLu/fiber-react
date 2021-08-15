@@ -267,6 +267,30 @@ var createTaskQueue = function createTaskQueue() {
 
 /***/ }),
 
+/***/ "./src/react/Misc/getRoot/index.js":
+/*!*****************************************!*\
+  !*** ./src/react/Misc/getRoot/index.js ***!
+  \*****************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+var getRoot = function getRoot(instance) {
+  var fiber = instance.__fiber;
+
+  while (fiber.parent) {
+    fiber = fiber.parent;
+  }
+
+  return fiber;
+};
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (getRoot);
+
+/***/ }),
+
 /***/ "./src/react/Misc/getTag/index.js":
 /*!****************************************!*\
   !*** ./src/react/Misc/getTag/index.js ***!
@@ -305,12 +329,15 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "createTaskQueue": () => (/* reexport safe */ _CreateTaskQueue__WEBPACK_IMPORTED_MODULE_0__.default),
 /* harmony export */   "arrified": () => (/* reexport safe */ _Arrified__WEBPACK_IMPORTED_MODULE_1__.default),
 /* harmony export */   "createStateNode": () => (/* reexport safe */ _CreateStateNode__WEBPACK_IMPORTED_MODULE_2__.default),
-/* harmony export */   "getTag": () => (/* reexport safe */ _getTag__WEBPACK_IMPORTED_MODULE_3__.default)
+/* harmony export */   "getTag": () => (/* reexport safe */ _getTag__WEBPACK_IMPORTED_MODULE_3__.default),
+/* harmony export */   "getRoot": () => (/* reexport safe */ _getRoot__WEBPACK_IMPORTED_MODULE_4__.default)
 /* harmony export */ });
 /* harmony import */ var _CreateTaskQueue__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./CreateTaskQueue */ "./src/react/Misc/CreateTaskQueue/index.js");
 /* harmony import */ var _Arrified__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./Arrified */ "./src/react/Misc/Arrified/index.js");
 /* harmony import */ var _CreateStateNode__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./CreateStateNode */ "./src/react/Misc/CreateStateNode/index.js");
 /* harmony import */ var _getTag__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./getTag */ "./src/react/Misc/getTag/index.js");
+/* harmony import */ var _getRoot__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./getRoot */ "./src/react/Misc/getRoot/index.js");
+
 
 
 
@@ -408,6 +435,12 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _Misc__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../Misc */ "./src/react/Misc/index.js");
 /* harmony import */ var _DOM__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../DOM */ "./src/react/DOM/index.js");
+function ownKeys(object, enumerableOnly) { var keys = Object.keys(object); if (Object.getOwnPropertySymbols) { var symbols = Object.getOwnPropertySymbols(object); if (enumerableOnly) { symbols = symbols.filter(function (sym) { return Object.getOwnPropertyDescriptor(object, sym).enumerable; }); } keys.push.apply(keys, symbols); } return keys; }
+
+function _objectSpread(target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i] != null ? arguments[i] : {}; if (i % 2) { ownKeys(Object(source), true).forEach(function (key) { _defineProperty(target, key, source[key]); }); } else if (Object.getOwnPropertyDescriptors) { Object.defineProperties(target, Object.getOwnPropertyDescriptors(source)); } else { ownKeys(Object(source)).forEach(function (key) { Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key)); }); } } return target; }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
 
 
 var taskQueue = (0,_Misc__WEBPACK_IMPORTED_MODULE_0__.createTaskQueue)(); // 要执行的子任务
@@ -418,6 +451,11 @@ var pendingCommit = null;
 
 var commitAllWork = function commitAllWork(fiber) {
   fiber.effects.forEach(function (item) {
+    if (item.tag === 'class_component') {
+      // 将组件的 Fiber 对象添加到实例对象的 __fiber 上
+      item.stateNode.__fiber = item;
+    }
+
     if (item.effectTag === 'placement') {
       // 追加节点
       var parentFiber = item.parent;
@@ -454,7 +492,29 @@ var commitAllWork = function commitAllWork(fiber) {
 
 var getFirstTask = function getFirstTask() {
   // 从任务队列中获取任务
-  var task = taskQueue.pop(); // 返回最外层的 Fiber 对象
+  var task = taskQueue.pop(); // 判断任务是否来自 class_component
+
+  if (task.from === 'class_component') {
+    // 组件更新任务
+
+    /**
+     * 重新构建最外层的 Fiber 对象，根据最外层已经存在的 Fiber 对象来构建更新任务，怎么做？
+     * 可以通过组件的实例对象挂载的 __fiber 对象一层一层向上查找，直到找到最外层的根节点 Fiber 对象
+     */
+    // 还需将 partialState 存储起来
+    task.instance.__fiber.partialState = task.partialState; // task.instance.__fiber 通过 .parent 一级一级向上查找，一直找到最外层的根节点
+
+    var root = (0,_Misc__WEBPACK_IMPORTED_MODULE_0__.getRoot)(task.instance);
+    return {
+      props: root.props,
+      stateNode: root.stateNode,
+      tag: 'host_root',
+      effects: [],
+      child: null,
+      alternate: root
+    };
+  } // 返回最外层的 Fiber 对象
+
 
   return {
     props: task.props,
@@ -552,7 +612,12 @@ var reconcileChildren = function reconcileChildren(fiber, children) {
 var executeTask = function executeTask(fiber) {
   // 构建子节点的 Fiber 对象
   if (fiber.tag === 'class_component') {
-    // 如果是类组件，调用组件实例对象的 render 方法，获取 render 返回的 Fiber 的子元素
+    // 判断是否有组件属性需要更新
+    if (fiber.stateNode.__fiber && fiber.stateNode.__fiber.partialState) {
+      fiber.stateNode.state = _objectSpread(_objectSpread({}, fiber.stateNode.state), fiber.stateNode.__fiber.partialState);
+    } // 如果是类组件，调用组件实例对象的 render 方法，获取 render 返回的 Fiber 的子元素
+
+
     reconcileChildren(fiber, fiber.stateNode.render());
   } else if (fiber.tag === 'function_component') {
     // 如果是函数组件，调用函数组件本身
@@ -569,7 +634,7 @@ var executeTask = function executeTask(fiber) {
   var currentExecutelyFiber = fiber; // 当前节点是否有兄弟 Fiber 对象
 
   while (currentExecutelyFiber.parent) {
-    // 合并 effects 数组的 Fiber 对象
+    // 合并收集 effects 数组的 Fiber 对象
     currentExecutelyFiber.parent.effects = currentExecutelyFiber.parent.effects.concat(currentExecutelyFiber.effects.concat([currentExecutelyFiber])); // 当前 Fiber 对象是否有兄弟 Fiber 对象
 
     if (currentExecutelyFiber.sibling) {
@@ -584,9 +649,8 @@ var executeTask = function executeTask(fiber) {
 };
 
 var workLoop = function workLoop(deadline) {
-  // 是否有待执行任务
+  // 如果子任务不存在，就获取子任务
   if (!subTask) {
-    // 从任务队列中获取任务
     subTask = getFirstTask();
   } // 如果任务存在，并且浏览器有空闲时间，就调用 executeTask 方法执行任务
 
@@ -601,10 +665,16 @@ var workLoop = function workLoop(deadline) {
     commitAllWork(pendingCommit);
   }
 };
+/**
+ * @todo 调度任务
+ * @param {Object} deadline 浏览器空闲时间
+ */
+
 
 var performTask = function performTask(deadline) {
   // 循环执行任务
-  workLoop(deadline); // 判断 subTask 是否还有任务，或者任务队列还有任务未执行，再一次注册在浏览器空闲时间要执行的任务事件
+  workLoop(deadline); // 万一任务被打断了呢？
+  // 判断 subTask 是否还有任务，或者任务队列还有任务未执行，再一次注册在浏览器空闲时间要执行的任务事件
 
   if (subTask || !taskQueue.isEmpty) {
     requestIdleCallback(performTask);
@@ -622,7 +692,7 @@ var render = function render(element, container) {
     props: {
       children: element
     }
-  }); // 指定在浏览器空闲事件去执行任务
+  }); // 指定在浏览器空闲时间去执行任务
 
   requestIdleCallback(performTask);
 };
@@ -632,7 +702,15 @@ var render = function render(element, container) {
  * @param {Object} partialState 
  */
 
-var scheduleUpdate = function scheduleUpdate(instance, partialState) {// 将组件的更新视为一个任务添加到任务队列中
+var scheduleUpdate = function scheduleUpdate(instance, partialState) {
+  // 将组件的更新视为一个任务添加到任务队列中
+  taskQueue.push({
+    from: 'class_component',
+    instance: instance,
+    partialState: partialState
+  }); // 在浏览器空闲时间执行任务
+
+  requestIdleCallback(performTask);
 };
 
 /***/ })

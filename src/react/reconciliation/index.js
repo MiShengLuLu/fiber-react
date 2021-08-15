@@ -1,4 +1,4 @@
-import { createTaskQueue, arrified, createStateNode, getTag } from '../Misc'
+import { createTaskQueue, arrified, createStateNode, getTag, getRoot } from '../Misc'
 import { updateNodeElement } from '../DOM'
 
 const taskQueue = createTaskQueue()
@@ -11,6 +11,11 @@ let pendingCommit = null
 
 const commitAllWork = fiber => {
   fiber.effects.forEach(item => {
+    if (item.tag === 'class_component') {
+      // 将组件的 Fiber 对象添加到实例对象的 __fiber 上
+      item.stateNode.__fiber = item
+    }
+
     if (item.effectTag === 'placement') {
       // 追加节点
       let parentFiber = item.parent
@@ -47,6 +52,29 @@ const commitAllWork = fiber => {
 const getFirstTask = () => {
   // 从任务队列中获取任务
   const task = taskQueue.pop()
+
+  // 判断任务是否来自 class_component
+  if (task.from === 'class_component') {
+    // 组件更新任务
+    /**
+     * 重新构建最外层的 Fiber 对象，根据最外层已经存在的 Fiber 对象来构建更新任务，怎么做？
+     * 可以通过组件的实例对象挂载的 __fiber 对象一层一层向上查找，直到找到最外层的根节点 Fiber 对象
+     */
+    // 还需将 partialState 存储起来
+    task.instance.__fiber.partialState = task.partialState
+    // task.instance.__fiber 通过 .parent 一级一级向上查找，一直找到最外层的根节点
+    const root = getRoot(task.instance)
+
+    return {
+      props: root.props,
+      stateNode: root.stateNode,
+      tag: 'host_root',
+      effects: [],
+      child: null,
+      alternate: root
+    }
+  }
+
   // 返回最外层的 Fiber 对象
   return {
     props: task.props,
@@ -147,6 +175,14 @@ const reconcileChildren = (fiber, children) => {
 const executeTask = fiber => {
   // 构建子节点的 Fiber 对象
   if (fiber.tag === 'class_component') {
+    // 判断是否有组件属性需要更新
+    if (fiber.stateNode.__fiber && fiber.stateNode.__fiber.partialState) {
+      fiber.stateNode.state = {
+        ...fiber.stateNode.state,
+        ...fiber.stateNode.__fiber.partialState
+      }
+    }
+
     // 如果是类组件，调用组件实例对象的 render 方法，获取 render 返回的 Fiber 的子元素
     reconcileChildren(fiber, fiber.stateNode.render())
   } else if (fiber.tag === 'function_component') {
@@ -163,7 +199,7 @@ const executeTask = fiber => {
   let currentExecutelyFiber = fiber
   // 当前节点是否有兄弟 Fiber 对象
   while (currentExecutelyFiber.parent) {
-    // 合并 effects 数组的 Fiber 对象
+    // 合并收集 effects 数组的 Fiber 对象
     currentExecutelyFiber.parent.effects = currentExecutelyFiber.parent.effects.concat(
       currentExecutelyFiber.effects.concat([currentExecutelyFiber])
     )
@@ -180,9 +216,8 @@ const executeTask = fiber => {
 }
 
 const workLoop = deadline => {
-  // 是否有待执行任务
+  // 如果子任务不存在，就获取子任务
   if (!subTask) {
-    // 从任务队列中获取任务
     subTask = getFirstTask()
   }
   // 如果任务存在，并且浏览器有空闲时间，就调用 executeTask 方法执行任务
@@ -197,9 +232,15 @@ const workLoop = deadline => {
   }
 }
 
+/**
+ * @todo 调度任务
+ * @param {Object} deadline 浏览器空闲时间
+ */
 const performTask = deadline => {
   // 循环执行任务
   workLoop(deadline)
+
+  // 万一任务被打断了呢？
   // 判断 subTask 是否还有任务，或者任务队列还有任务未执行，再一次注册在浏览器空闲时间要执行的任务事件
   if (subTask || !taskQueue.isEmpty) {
     requestIdleCallback(performTask)
@@ -219,7 +260,7 @@ export const render = (element, container) => {
       children: element
     }
   })
-  // 指定在浏览器空闲事件去执行任务
+  // 指定在浏览器空闲时间去执行任务
   requestIdleCallback(performTask)
 }
 
@@ -230,4 +271,11 @@ export const render = (element, container) => {
  */
 export const scheduleUpdate = (instance, partialState) => {
   // 将组件的更新视为一个任务添加到任务队列中
+  taskQueue.push({
+    from: 'class_component',
+    instance,
+    partialState
+  })
+  // 在浏览器空闲时间执行任务
+  requestIdleCallback(performTask)
 }

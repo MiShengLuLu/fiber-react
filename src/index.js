@@ -22,10 +22,17 @@ const JSX = (
 class Greating extends Component {
   constructor(props) {
     super(props)
+    this.state = {
+      name: '张三'
+    }
   }
   render() {
     return (
-      <div>{ this.props.title } Fiber React </div>
+      <div>
+        { this.props.title } Fiber React { this.state.name }
+        <br />
+        <button onClick={() => this.setState({ name: '李四' })}>按钮</button>
+      </div>
     )
   }
 }
